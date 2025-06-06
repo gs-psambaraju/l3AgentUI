@@ -49,10 +49,24 @@ export function MessageBubble({ message, suggestions, actions }: MessageBubblePr
   );
 
   // Handle progress messages with ProgressIndicator
-  if (message.type === 'progress' && message.job) {
+  if (message.type === 'progress') {
+    // If we have job data, use it. Otherwise create a fallback completed job
+    const job = message.job || {
+      jobId: 'completed',
+      status: 'COMPLETED' as const,
+      progress: {
+        currentStep: message.content,
+        completionPercentage: 100,
+        currentStepIndex: 5,
+        totalSteps: 5
+      },
+      createdAt: message.timestamp.toISOString(),
+      updatedAt: message.timestamp.toISOString()
+    };
+
     return (
       <div className="flex justify-start mb-4">
-        <ProgressIndicator job={message.job} />
+        <ProgressIndicator job={job} />
       </div>
     );
   }

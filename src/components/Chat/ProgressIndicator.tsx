@@ -7,82 +7,84 @@ interface ProgressIndicatorProps {
 }
 
 const ProgressIndicator: React.FC<ProgressIndicatorProps> = ({ job, className = '' }) => {
-  const getStatusIcon = (status: AnalysisJob['status']) => {
-    switch (status) {
-      case 'COMPLETED':
-        return '✅';
-      case 'FAILED':
-        return '❌';
-      case 'TIMEOUT':
-        return '⏱️';
-      case 'PROCESSING':
-        return '🔄';
-      case 'CREATED':
-        return '⏳';
-      default:
-        return '⏳';
-    }
-  };
-
   const isActive = job.status === 'PROCESSING' || job.status === 'CREATED';
+  const isCompleted = job.status === 'COMPLETED';
+  const isFailed = job.status === 'FAILED' || job.status === 'TIMEOUT';
+
+  // Animated thinking dots
+  const ThinkingDots = () => (
+    <div className="flex items-center space-x-1">
+      <div className="w-1.5 h-1.5 bg-blue-400 rounded-full animate-pulse" style={{ animationDelay: '0ms' }}></div>
+      <div className="w-1.5 h-1.5 bg-blue-400 rounded-full animate-pulse" style={{ animationDelay: '200ms' }}></div>
+      <div className="w-1.5 h-1.5 bg-blue-400 rounded-full animate-pulse" style={{ animationDelay: '400ms' }}></div>
+    </div>
+  );
 
   return (
-    <div className={`bg-blue-50 rounded-lg border border-blue-200 p-4 ${className}`}>
-      {/* Header with current thinking step */}
-      <div className="flex items-center gap-3 mb-3">
-        <span className={`text-lg ${isActive ? 'animate-spin' : ''}`}>
-          {getStatusIcon(job.status)}
-        </span>
-        <div className="flex-1">
-          <div className="font-medium text-blue-900">
-            {job.status === 'COMPLETED' ? 'Analysis Complete' : 
-             job.status === 'FAILED' ? 'Analysis Failed' :
-             job.status === 'TIMEOUT' ? 'Analysis Timed Out' :
-             'Analyzing...'}
+    <div className={`flex justify-start ${className}`}>
+      <div className="message-bubble bot max-w-none">
+        <div className="flex items-start space-x-3">
+          {/* Icon area */}
+          <div className="flex-shrink-0 mt-1">
+            {isActive && <ThinkingDots />}
+            {isCompleted && <span className="text-green-500 text-sm">✓</span>}
+            {isFailed && <span className="text-red-500 text-sm">✗</span>}
           </div>
-          {/* Real-time thinking step */}
-          <div className="text-sm text-blue-700 mt-1">
-            {job.progress.currentStep}
+          
+          {/* Content area */}
+          <div className="flex-1 min-w-0">
+            {/* Current thinking step */}
+            <div className="text-sm text-gray-200 mb-2">
+              {isActive && (
+                <span className="italic text-blue-300">
+                  {job.progress.currentStep}
+                </span>
+              )}
+              {isCompleted && (
+                <span className="text-green-300">
+                  Analysis complete
+                </span>
+              )}
+              {isFailed && (
+                <span className="text-red-300">
+                  Analysis failed
+                  {job.errorMessage && `: ${job.errorMessage}`}
+                </span>
+              )}
+            </div>
+
+            {/* Progress bar - only show when active */}
+            {isActive && (
+              <div className="mb-2">
+                <div className="flex justify-between text-xs text-gray-400 mb-1">
+                  <span>Step {job.progress.currentStepIndex} of {job.progress.totalSteps}</span>
+                  <span>{job.progress.completionPercentage}%</span>
+                </div>
+                <div className="w-full bg-gray-600 rounded-full h-1">
+                  <div 
+                    className="bg-blue-400 h-1 rounded-full transition-all duration-700 ease-out"
+                    style={{ width: `${job.progress.completionPercentage}%` }}
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Time estimate - only when active */}
+            {isActive && job.estimatedTimeRemaining && (
+              <div className="text-xs text-gray-400">
+                ~{job.estimatedTimeRemaining} remaining
+              </div>
+            )}
+
+            {/* Completion summary - only when done */}
+            {isCompleted && (
+              <div className="text-xs text-gray-400 mt-1">
+                Analyzed in {job.progress.totalSteps} steps • {new Date(job.createdAt).toLocaleTimeString()}
+              </div>
+            )}
           </div>
         </div>
-        {job.estimatedTimeRemaining && isActive && (
-          <div className="text-xs text-blue-600 bg-blue-100 px-2 py-1 rounded">
-            ~{job.estimatedTimeRemaining}
-          </div>
-        )}
       </div>
-
-      {/* Progress Bar */}
-      {isActive && (
-        <div className="mb-3">
-          <div className="flex justify-between text-xs text-blue-600 mb-1">
-            <span>Step {job.progress.currentStepIndex} of {job.progress.totalSteps}</span>
-            <span>{job.progress.completionPercentage}%</span>
-          </div>
-          <div className="w-full bg-blue-100 rounded-full h-1.5">
-            <div 
-              className="bg-blue-500 h-1.5 rounded-full transition-all duration-500 ease-out"
-              style={{ width: `${job.progress.completionPercentage}%` }}
-            />
-          </div>
-        </div>
-      )}
-
-      {/* Error Message */}
-      {job.status === 'FAILED' && job.errorMessage && (
-        <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg">
-          <div className="text-sm text-red-800">
-            <strong>Error:</strong> {job.errorMessage}
-          </div>
-        </div>
-      )}
-
-      {/* Job Metadata - minimal */}
-      {job.status !== 'PROCESSING' && (
-        <div className="mt-3 pt-2 border-t border-blue-200 text-xs text-blue-500">
-          Job {job.jobId.split('_')[0]}... • {new Date(job.createdAt).toLocaleTimeString()}
-        </div>
-      )}
     </div>
   );
 };
