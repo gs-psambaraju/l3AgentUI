@@ -56,10 +56,19 @@ export function useConversation() {
       id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
     };
     
-    setConversation(prev => ({
-      ...prev,
-      messages: [...prev.messages, newMessage],
-    }));
+    setConversation(prev => {
+      let updatedMessages = [...prev.messages];
+      
+      // If adding a progress message, remove any existing progress messages first
+      if (message.type === 'progress') {
+        updatedMessages = updatedMessages.filter(msg => msg.type !== 'progress');
+      }
+      
+      return {
+        ...prev,
+        messages: [...updatedMessages, newMessage],
+      };
+    });
     
     return newMessage;
   }, []);
@@ -77,15 +86,7 @@ export function useConversation() {
     }));
   }, []);
 
-  // Helper to remove any existing progress messages
-  const clearProgressMessages = useCallback(() => {
-    setConversation(prev => ({
-      ...prev,
-      currentJob: null,
-      isAsyncProcessing: false,
-      messages: prev.messages.filter(msg => msg.type !== 'progress'),
-    }));
-  }, []);
+
 
   // Helper to process API response
   const processResponse = useCallback((response: AnalysisResponse) => {
@@ -147,12 +148,9 @@ export function useConversation() {
       if (AsyncJobService.shouldUseAsync(request)) {
         console.log('🔄 Starting async analysis');
         
-        // Clear any existing progress messages first
-        clearProgressMessages();
-        
         setConversation(prev => ({ ...prev, isAsyncProcessing: true }));
         
-        // Add progress message
+        // Add progress message (automatically clears existing progress messages)
         const progressMessage = addMessage({
           type: 'progress',
           content: 'Starting analysis...',
@@ -207,7 +205,7 @@ export function useConversation() {
     } finally {
       setIsLoading(false);
     }
-  }, [addMessage, processResponse, updateProgressMessage, clearProgressMessages]);
+  }, [addMessage, processResponse, updateProgressMessage]);
 
   // Follow-up message function with async support
   const sendFollowUp = useCallback(async (message: string) => {
@@ -254,12 +252,9 @@ export function useConversation() {
       if (AsyncJobService.shouldUseAsync(tempRequest)) {
         console.log('🔄 Starting async follow-up');
         
-        // Clear any existing progress messages first
-        clearProgressMessages();
-        
         setConversation(prev => ({ ...prev, isAsyncProcessing: true }));
         
-        // Add progress message
+        // Add progress message (automatically clears existing progress messages)
         const progressMessage = addMessage({
           type: 'progress',
           content: 'Processing follow-up...',
