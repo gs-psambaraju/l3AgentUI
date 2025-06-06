@@ -227,32 +227,11 @@ export class AsyncJobService {
 
   /**
    * Determine if request should use async processing
-   * Based on L3Agent v2 API Documentation criteria for complex analysis
+   * Always returns true - all requests go through async processing
    */
   static shouldUseAsync(request: AnalysisRequest): boolean {
-    // Use async for complex cases as per API documentation:
-    // - Any request with stacktraces (requires deep analysis)
-    // - Any request with logs (requires log parsing and correlation)  
-    // - Any request with code snippets (requires code analysis)
-    // - Multiple data sources that need correlation
-    const hasStacktrace = !!request.stacktrace;
-    const hasLogs = (request.logs?.length || 0) > 0;
-    const hasCodeSnippets = (request.code_snippets?.length || 0) > 0;
-    
-    // Debug logging
-    console.log('🔍 shouldUseAsync Debug:', {
-      request: request,
-      hasStacktrace,
-      hasLogs,
-      hasCodeSnippets,
-      stacktraceContent: request.stacktrace ? 'PRESENT' : 'NONE',
-      logsCount: request.logs?.length || 0,
-      codeSnippetsCount: request.code_snippets?.length || 0,
-      willUseAsync: hasStacktrace || hasLogs || hasCodeSnippets
-    });
-    
-    // Use async if request has any complex data that requires deep analysis
-    return hasStacktrace || hasLogs || hasCodeSnippets;
+    console.log('🔄 All requests use async processing');
+    return true;
   }
 
   /**

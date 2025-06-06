@@ -195,12 +195,13 @@ export interface HealthCheckResponse {
 // UI State Types
 export interface ChatMessage {
   id: string;
-  type: 'bot' | 'user' | 'system';
+  type: 'bot' | 'user' | 'system' | 'progress';
   content: string;
   timestamp: Date;
   confidence?: number;
   reasoning?: string; // New field for AI reasoning/thinking
   isHtmlFormatted?: boolean; // New field to indicate HTML content from backend
+  job?: AnalysisJob; // For progress messages
 }
 
 export interface ConversationState {

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { ChevronDown, ChevronUp, Info, Brain, Lightbulb } from 'lucide-react';
 import { MessageBubbleProps } from '../../types';
 import { ConversationalSuggestions } from './ConversationalSuggestions';
+import ProgressIndicator from './ProgressIndicator';
 
 export function MessageBubble({ message, suggestions, actions }: MessageBubbleProps) {
   const [showDetails, setShowDetails] = useState(false);
@@ -46,6 +47,15 @@ export function MessageBubble({ message, suggestions, actions }: MessageBubblePr
     message.content.toLowerCase().includes('diagnostic questions') ||
     message.content.toLowerCase().includes('better understand')
   );
+
+  // Handle progress messages with ProgressIndicator
+  if (message.type === 'progress' && message.job) {
+    return (
+      <div className="flex justify-start mb-4">
+        <ProgressIndicator job={message.job} />
+      </div>
+    );
+  }
 
   // Don't render system reasoning messages as regular messages
   if (isSystemReasoning) {

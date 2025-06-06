@@ -7,22 +7,6 @@ interface ProgressIndicatorProps {
 }
 
 const ProgressIndicator: React.FC<ProgressIndicatorProps> = ({ job, className = '' }) => {
-  const getStatusColor = (status: AnalysisJob['status']) => {
-    switch (status) {
-      case 'COMPLETED':
-        return 'text-green-600 bg-green-50 border-green-200';
-      case 'FAILED':
-      case 'TIMEOUT':
-        return 'text-red-600 bg-red-50 border-red-200';
-      case 'PROCESSING':
-        return 'text-blue-600 bg-blue-50 border-blue-200';
-      case 'CREATED':
-        return 'text-gray-600 bg-gray-50 border-gray-200';
-      default:
-        return 'text-gray-600 bg-gray-50 border-gray-200';
-    }
-  };
-
   const getStatusIcon = (status: AnalysisJob['status']) => {
     switch (status) {
       case 'COMPLETED':
@@ -40,97 +24,65 @@ const ProgressIndicator: React.FC<ProgressIndicatorProps> = ({ job, className = 
     }
   };
 
-  const getStepIcon = (stepIndex: number, currentIndex: number) => {
-    if (stepIndex < currentIndex) return '✅';
-    if (stepIndex === currentIndex) return '🔄';
-    return '⏳';
-  };
-
-  const steps = [
-    'Problem Understanding',
-    'Pattern Recognition', 
-    'Root Cause Analysis',
-    'Solution Development',
-    'Solution Validation'
-  ];
+  const isActive = job.status === 'PROCESSING' || job.status === 'CREATED';
 
   return (
-    <div className={`bg-white rounded-lg border shadow-sm p-4 ${className}`}>
-      {/* Header */}
-      <div className={`flex items-center gap-3 p-3 rounded-lg border ${getStatusColor(job.status)}`}>
-        <span className="text-lg">{getStatusIcon(job.status)}</span>
+    <div className={`bg-blue-50 rounded-lg border border-blue-200 p-4 ${className}`}>
+      {/* Header with current thinking step */}
+      <div className="flex items-center gap-3 mb-3">
+        <span className={`text-lg ${isActive ? 'animate-spin' : ''}`}>
+          {getStatusIcon(job.status)}
+        </span>
         <div className="flex-1">
-          <div className="font-medium">
+          <div className="font-medium text-blue-900">
             {job.status === 'COMPLETED' ? 'Analysis Complete' : 
              job.status === 'FAILED' ? 'Analysis Failed' :
              job.status === 'TIMEOUT' ? 'Analysis Timed Out' :
-             job.status === 'PROCESSING' ? 'Analyzing...' :
-             'Starting Analysis...'}
+             'Analyzing...'}
           </div>
-          <div className="text-sm opacity-75">
+          {/* Real-time thinking step */}
+          <div className="text-sm text-blue-700 mt-1">
             {job.progress.currentStep}
           </div>
         </div>
-        {job.estimatedTimeRemaining && job.status === 'PROCESSING' && (
-          <div className="text-sm opacity-75">
+        {job.estimatedTimeRemaining && isActive && (
+          <div className="text-xs text-blue-600 bg-blue-100 px-2 py-1 rounded">
             ~{job.estimatedTimeRemaining}
           </div>
         )}
       </div>
 
       {/* Progress Bar */}
-      <div className="mt-4">
-        <div className="flex justify-between text-sm text-gray-600 mb-2">
-          <span>Progress</span>
-          <span>{job.progress.completionPercentage}%</span>
+      {isActive && (
+        <div className="mb-3">
+          <div className="flex justify-between text-xs text-blue-600 mb-1">
+            <span>Step {job.progress.currentStepIndex} of {job.progress.totalSteps}</span>
+            <span>{job.progress.completionPercentage}%</span>
+          </div>
+          <div className="w-full bg-blue-100 rounded-full h-1.5">
+            <div 
+              className="bg-blue-500 h-1.5 rounded-full transition-all duration-500 ease-out"
+              style={{ width: `${job.progress.completionPercentage}%` }}
+            />
+          </div>
         </div>
-        <div className="w-full bg-gray-200 rounded-full h-2">
-          <div 
-            className="bg-blue-600 h-2 rounded-full transition-all duration-300 ease-out"
-            style={{ width: `${job.progress.completionPercentage}%` }}
-          />
-        </div>
-      </div>
-
-      {/* Step Indicators */}
-      <div className="mt-4">
-        <div className="text-sm text-gray-600 mb-3">Analysis Steps</div>
-        <div className="space-y-2">
-          {steps.map((step, index) => (
-            <div key={index} className="flex items-center gap-3">
-              <span className="text-lg">
-                {getStepIcon(index + 1, job.progress.currentStepIndex)}
-              </span>
-              <span 
-                className={`text-sm ${
-                  index + 1 < job.progress.currentStepIndex ? 'text-green-600 font-medium' :
-                  index + 1 === job.progress.currentStepIndex ? 'text-blue-600 font-medium' :
-                  'text-gray-500'
-                }`}
-              >
-                {step}
-              </span>
-            </div>
-          ))}
-        </div>
-      </div>
+      )}
 
       {/* Error Message */}
       {job.status === 'FAILED' && job.errorMessage && (
-        <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-lg">
+        <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg">
           <div className="text-sm text-red-800">
             <strong>Error:</strong> {job.errorMessage}
           </div>
         </div>
       )}
 
-      {/* Job Metadata */}
-      <div className="mt-4 pt-3 border-t border-gray-100 text-xs text-gray-500">
-        <div className="flex justify-between">
-          <span>Job ID: {job.jobId}</span>
-          <span>Started: {new Date(job.createdAt).toLocaleTimeString()}</span>
+      {/* Job Metadata - minimal */}
+      {job.status !== 'PROCESSING' && (
+        <div className="mt-3 pt-2 border-t border-blue-200 text-xs text-blue-500">
+          Job {job.jobId.split('_')[0]}... • {new Date(job.createdAt).toLocaleTimeString()}
         </div>
-      </div>
+      )}
     </div>
   );
 };
