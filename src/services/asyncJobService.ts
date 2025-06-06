@@ -235,6 +235,20 @@ export class AsyncJobService {
     const isLongQuestion = request.question.length > 500;
     const hasCodeSnippets = (request.code_snippets?.length || 0) > 0;
     
+    // Debug logging
+    console.log('🔍 shouldUseAsync Debug:', {
+      request: request,
+      hasStacktrace,
+      hasMultipleLogs,
+      isLongQuestion,
+      hasCodeSnippets,
+      questionLength: request.question.length,
+      stacktraceContent: request.stacktrace ? 'PRESENT' : 'NONE',
+      logsCount: request.logs?.length || 0,
+      codeSnippetsCount: request.code_snippets?.length || 0,
+      willUseAsync: hasStacktrace || hasMultipleLogs || isLongQuestion || hasCodeSnippets
+    });
+    
     return hasStacktrace || hasMultipleLogs || isLongQuestion || hasCodeSnippets;
   }
 
