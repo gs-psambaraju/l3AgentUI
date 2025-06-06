@@ -1,15 +1,17 @@
 import { useState, useCallback } from 'react';
 import { conversationService } from '../services/conversationService';
-import { AnalysisRequest, FollowUpRequest, AnalysisResponse } from '../types';
+import { AsyncJobService } from '../services/asyncJobService';
+import { AnalysisRequest, FollowUpRequest, AnalysisResponse, AnalysisJob } from '../types';
 
 interface Message {
   id: string;
-  type: 'user' | 'bot' | 'system';
+  type: 'user' | 'bot' | 'system' | 'progress';
   content: string;
   timestamp: Date;
   confidence?: number;
   reasoning?: string;
   isHtmlFormatted?: boolean;
+  job?: AnalysisJob; // For progress messages
 }
 
 interface ConversationState {
@@ -24,6 +26,10 @@ interface ConversationState {
   needsEscalation: boolean;
   thoughtProcess: string | null;
   confidence: 'HIGH' | 'MEDIUM' | 'LOW' | null;
+  
+  // Async job data
+  currentJob: AnalysisJob | null;
+  isAsyncProcessing: boolean;
 }
 
 export function useConversation() {
@@ -37,6 +43,8 @@ export function useConversation() {
     needsEscalation: false,
     thoughtProcess: null,
     confidence: null,
+    currentJob: null,
+    isAsyncProcessing: false,
   });
 
   const [isLoading, setIsLoading] = useState(false);
@@ -56,6 +64,19 @@ export function useConversation() {
     return newMessage;
   }, []);
 
+  // Helper to update progress message
+  const updateProgressMessage = useCallback((job: AnalysisJob) => {
+    setConversation(prev => ({
+      ...prev,
+      currentJob: job,
+      messages: prev.messages.map(msg => 
+        msg.type === 'progress' && msg.job?.jobId === job.jobId
+          ? { ...msg, job, content: job.progress.currentStep, timestamp: new Date() }
+          : msg
+      ),
+    }));
+  }, []);
+
   // Helper to process API response
   const processResponse = useCallback((response: AnalysisResponse) => {
     const uiFields = conversationService.extractUIFields(response, conversation.conversationId);
@@ -73,8 +94,8 @@ export function useConversation() {
       type: 'bot',
       content: uiFields.mainMessage,
       timestamp: new Date(),
-      confidence: response.confidenceLevel === 'HIGH' ? 0.9 : 
-                 response.confidenceLevel === 'MEDIUM' ? 0.7 : 0.5,
+      confidence: response.confidence_level === 'HIGH' ? 0.9 : 
+                 response.confidence_level === 'MEDIUM' ? 0.7 : 0.5,
       reasoning: uiFields.details,
       isHtmlFormatted: uiFields.isHtmlFormatted,
     });
@@ -89,7 +110,7 @@ export function useConversation() {
       nextActions: uiFields.actions,
       needsEscalation: uiFields.needsEscalation,
       thoughtProcess: uiFields.details,
-      confidence: response.confidenceLevel || null,
+      confidence: response.confidence_level || null,
     }));
   }, [addMessage, conversation.conversationId]);
 
@@ -221,6 +242,8 @@ export function useConversation() {
       needsEscalation: false,
       thoughtProcess: null,
       confidence: null,
+      currentJob: null,
+      isAsyncProcessing: false,
     });
     
     setIsLoading(false);

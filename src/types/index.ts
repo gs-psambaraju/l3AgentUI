@@ -5,11 +5,59 @@ export interface StackTraceFile {
   mimeType: string;
 }
 
-// New v2 Analysis Request
+// Enhanced v2 Analysis Request - matches new API
 export interface AnalysisRequest {
+  request_id?: string;
   question: string;
-  userId?: string;
-  requestId?: string;
+  stacktrace?: string;
+  logs?: string[];
+  code_snippets?: string[];
+  user_id?: string;
+  created_at?: string;
+}
+
+// NEW: Async Job Types for v2
+export interface JobProgress {
+  currentStep: string;
+  completionPercentage: number;
+  currentStepIndex: number;
+  totalSteps: number;
+}
+
+export interface AnalysisJob {
+  jobId: string;
+  status: 'CREATED' | 'PROCESSING' | 'COMPLETED' | 'FAILED' | 'TIMEOUT';
+  progress: JobProgress;
+  createdAt: string;
+  updatedAt: string;
+  estimatedTimeRemaining?: string;
+  estimatedCompletionTime?: string;
+  statusUrl?: string;
+  resultUrl?: string;
+  errorMessage?: string;
+}
+
+export interface AsyncJobResponse {
+  success: boolean;
+  data?: AnalysisJob;
+  error?: string;
+  timestamp: string;
+  version: string;
+}
+
+export interface JobStatsResponse {
+  success: boolean;
+  data?: {
+    active_jobs: number;
+    total_created: number;
+    total_completed: number;
+    total_failed: number;
+    total_timed_out: number;
+    success_rate: number;
+    user_job_counts: Record<string, number>;
+  };
+  error?: string;
+  timestamp: string;
 }
 
 // Legacy v1 types for backward compatibility during migration
@@ -31,41 +79,43 @@ export interface ApiResponseWrapper<T> {
   success: boolean;
   data?: T;
   error?: string;
-  requestId: string;
+  requestId?: string;
   timestamp: string;
-  version: string;
+  version?: string;
 }
 
-// New v2 Analysis Response - Updated to match actual API structure
+// Enhanced v2 Analysis Response - Updated to match new API structure
 export interface AnalysisResponse {
-  // === PRIMARY UI FIELDS (Use these for display) ===
-  displayMessage: string;
-  nextActions: string[];
-  thoughtProcess?: string;
-  needsEscalation: boolean;
-  
-  // === LEGACY FIELDS (Deprecated but still present) ===
-  summary?: string;
-  immediateActions?: string[];
-  followUpActions?: string[];
-  confidenceLevel?: 'HIGH' | 'MEDIUM' | 'LOW';
-  confidenceExplanation?: string;
-  estimatedResolution?: string;
-  relatedDocumentation?: string[];
-  
-  // === METADATA ===
-  analysisMetadata: {
-    conversationId: string;
-    supportsFollowUp: boolean;
-    categoryUsed: 'PRODUCT_QUESTION' | 'LOG_ANALYSIS' | 'STACKTRACE_ANALYSIS' | 'PROBLEM_DESCRIPTION';
-    workflowMatched?: string;
-    codeContextRetrieved: boolean;
-    processingTimeMs: number;
-    llmCallsMade: number;
+  request_id: string;
+  summary: string;
+  immediate_actions: string[];
+  follow_up_actions: string[];
+  escalation_criteria: {
+    escalate_if: string;
+    escalate_to: 'ENGINEERING' | 'PRODUCT' | 'CUSTOMER_SUCCESS';
+    escalation_priority: 'LOW' | 'MEDIUM' | 'HIGH';
+  };
+  confidence_level: 'HIGH' | 'MEDIUM' | 'LOW';
+  confidence_explanation: string;
+  estimated_resolution: string;
+  related_documentation: string[];
+  generated_at: string;
+  analysis_metadata: {
+    category_used: 'STACKTRACE_ANALYSIS' | 'LOG_ANALYSIS' | 'GENERAL_QUESTION';
+    workflow_matched?: string;
+    code_context_retrieved: boolean;
+    processing_time_ms: number;
+    llm_calls_made: number;
+    files_loaded?: string[];
+    conversationId?: string;
+    supportsFollowUp?: boolean;
   };
   
-  requestId: string;
-  generatedAt: string;
+  // Legacy UI fields for backward compatibility
+  displayMessage?: string;
+  nextActions?: string[];
+  thoughtProcess?: string;
+  needsEscalation?: boolean;
 }
 
 // Quick Analysis Response
@@ -166,6 +216,9 @@ export interface ConversationState {
   currentAnalysis: AnalysisResponse | null;
   immediateActions: string[];
   followUpActions: string[];
+  // NEW: Async job fields
+  currentJob: AnalysisJob | null;
+  isAsyncProcessing: boolean;
 }
 
 export interface QuestionResponse {

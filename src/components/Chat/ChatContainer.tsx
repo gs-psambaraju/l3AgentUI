@@ -3,6 +3,7 @@ import { useConversation } from '../../hooks/useConversation';
 import { MessageBubble } from './MessageBubble';
 import { InputArea } from './InputArea';
 import { StatusIndicator } from './StatusIndicator';
+import ProgressIndicator from './ProgressIndicator';
 import { Copy, RotateCcw, MessageCircle, Sparkles, AlertTriangle } from 'lucide-react';
 import Button from '../Common/Button';
 import { AnalysisRequest } from '../../types';
@@ -175,10 +176,18 @@ export function ChatContainer() {
         })}
         
         {/* Status indicator for processing states */}
-        {isLoading && (
+        {isLoading && !conversation.isAsyncProcessing && (
           <StatusIndicator 
             status="analyzing"
             message="Analyzing your request..."
+          />
+        )}
+
+        {/* Async job progress indicator */}
+        {conversation.isAsyncProcessing && conversation.currentJob && (
+          <ProgressIndicator 
+            job={conversation.currentJob}
+            className="mb-4"
           />
         )}
 

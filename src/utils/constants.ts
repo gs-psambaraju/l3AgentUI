@@ -1,19 +1,26 @@
-export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080';
+export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/l3agent';
 
 export const API_ENDPOINTS = {
-  // Current v2.0 endpoints - using /l3agent prefix as requested
-  ANALYZE: '/l3agent/api/v1/analyze',
+  // v2.0 Main Analysis endpoints
+  ANALYZE: '/api/v1/analyze',
+  ANALYZE_ASYNC: '/api/v1/analyze-async',
+  
+  // v2.0 Job Management endpoints (NEW)
+  JOB_STATUS: '/api/v1/jobs', // /{jobId}/status
+  JOB_RESULT: '/api/v1/jobs', // /{jobId}/result
+  JOB_STATS: '/api/v1/jobs/stats',
+  
+  // v2.0 Conversation endpoints
   CONVERSATION_MESSAGE: '/api/v1/conversation',
+  CONVERSATION_MESSAGE_ASYNC: '/api/v1/conversation', // /{conversationId}/message-async
   CONVERSATION_HISTORY: '/api/v1/conversation',
   CONVERSATION_DELETE: '/api/v1/conversation',
-  WORKFLOWS: '/api/v1/workflows',
-  HEALTH: '/api/v1/health',
   
-  // Additional v2 endpoints
-  QUICK_ANALYZE: '/l3agent/api/v1/quick-analyze',
-  SEARCH_WORKFLOWS: '/l3agent/api/v1/workflows/search',
-  STATUS: '/l3agent/api/v1/status',
-  PING: '/l3agent/api/v1/ping',
+  // v2.0 Utility endpoints
+  QUICK_ANALYZE: '/api/v1/quick-analyze',
+  SEARCH_WORKFLOWS: '/api/v1/search-workflows',
+  HEALTH: '/api/v1/health',
+  STATUS: '/api/v1/status',
   
   // Legacy v1 endpoints (deprecated but kept for compatibility)
   LEGACY_ANALYZE: '/api/v1/analyze',
@@ -27,9 +34,16 @@ export const API_ENDPOINTS = {
 
 export const APP_CONFIG = {
   name: import.meta.env.VITE_APP_NAME || 'L3 Agent',
-  version: import.meta.env.VITE_APP_VERSION || '1.0.0',
+  version: import.meta.env.VITE_APP_VERSION || '2.0.0',
   apiTimeout: 30000,
   healthCheckInterval: 30000,
+  // New async job configuration
+  asyncJobConfig: {
+    maxConcurrentJobs: 5,
+    pollInterval: 3000, // 3 seconds
+    maxPollAttempts: 100, // 5 minutes max (100 * 3 seconds)
+    timeoutMs: 300000, // 5 minutes
+  },
 };
 
 // Removed CONNECTOR_TYPES - no longer used in the new API structure

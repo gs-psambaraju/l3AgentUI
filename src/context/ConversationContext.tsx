@@ -1,8 +1,8 @@
 import * as React from 'react';
-import { ConversationState, ChatMessage, ConversationQuestion, ResolutionPath, EscalationPackage, AnalysisResponse } from '../types';
+import { ConversationState, ChatMessage, ConversationQuestion, ResolutionPath, EscalationPackage, AnalysisResponse, AnalysisJob } from '../types';
 import { CONVERSATION_STATUS, MESSAGE_TYPES } from '../utils/constants';
 
-// Initial state
+// Enhanced initial state with async job support
 const initialState: ConversationState = {
   conversationId: null,
   messages: [],
@@ -16,9 +16,12 @@ const initialState: ConversationState = {
   currentAnalysis: null,
   immediateActions: [],
   followUpActions: [],
+  // NEW: Async job fields
+  currentJob: null,
+  isAsyncProcessing: false,
 };
 
-// Action types
+// Enhanced action types with async job actions
 type ConversationAction =
   | { type: 'SET_LOADING'; payload: boolean }
   | { type: 'START_CONVERSATION'; payload: { conversationId: string; confidence: number; summary: string } }
@@ -31,7 +34,12 @@ type ConversationAction =
   | { type: 'SET_CONFIDENCE'; payload: number }
   | { type: 'RESET_CONVERSATION' }
   | { type: 'CLEAR_QUESTIONS' }
-  | { type: 'SET_ANALYSIS'; payload: AnalysisResponse }; // New v2 action
+  | { type: 'SET_ANALYSIS'; payload: AnalysisResponse }
+  // NEW: Async job actions
+  | { type: 'START_ASYNC_JOB'; payload: AnalysisJob }
+  | { type: 'UPDATE_JOB_PROGRESS'; payload: AnalysisJob }
+  | { type: 'COMPLETE_ASYNC_JOB'; payload: { job: AnalysisJob; result: AnalysisResponse } }
+  | { type: 'FAIL_ASYNC_JOB'; payload: { job: AnalysisJob; error: string } };
 
 // Reducer function
 function conversationReducer(state: ConversationState, action: ConversationAction): ConversationState {
@@ -138,7 +146,7 @@ function conversationReducer(state: ConversationState, action: ConversationActio
         currentAnalysis: action.payload,
         immediateActions: action.payload.immediate_actions || [],
         followUpActions: action.payload.follow_up_actions || [],
-        conversationId: action.payload.analysis_metadata?.conversation_id || action.payload.request_id, // Use conversation_id from metadata
+        conversationId: action.payload.analysis_metadata?.conversationId || action.payload.request_id, // Use conversationId from metadata
         status: 'investigating',
       };
 
@@ -153,6 +161,40 @@ function conversationReducer(state: ConversationState, action: ConversationActio
             timestamp: new Date(),
           },
         ],
+      };
+
+    case 'START_ASYNC_JOB':
+      return {
+        ...state,
+        currentJob: action.payload,
+        isAsyncProcessing: true,
+      };
+
+    case 'UPDATE_JOB_PROGRESS':
+      return {
+        ...state,
+        currentJob: action.payload,
+      };
+
+    case 'COMPLETE_ASYNC_JOB':
+      return {
+        ...state,
+        currentJob: null,
+        isAsyncProcessing: false,
+        currentAnalysis: action.payload.result,
+        immediateActions: action.payload.result.immediate_actions || [],
+        followUpActions: action.payload.result.follow_up_actions || [],
+        conversationId: action.payload.result.analysis_metadata?.conversationId || action.payload.result.request_id,
+        status: 'investigating',
+      };
+
+    case 'FAIL_ASYNC_JOB':
+      return {
+        ...state,
+        currentJob: null,
+        isAsyncProcessing: false,
+        error: action.payload.error,
+        status: 'idle',
       };
 
     default:

@@ -117,29 +117,28 @@ export function InputArea({
 
     setError('');
     
-    // Build the complete question including stack traces and files
-    let fullQuestion = description.trim();
-    
-    // Add stack traces if any
+    // Extract stack traces
     const validStackTraces = stackTraces.filter((st: StackTrace) => st.content.trim());
-    if (validStackTraces.length > 0) {
-      fullQuestion += '\n\nStack Traces:\n' + validStackTraces
-        .map((st: StackTrace, index: number) => `Stack Trace ${index + 1}:\n${st.content.trim()}`)
-        .join('\n\n');
-    }
     
-    // Add uploaded files if any
-    if (uploadedFiles.length > 0) {
-      fullQuestion += '\n\nLog Files:\n' + uploadedFiles
-        .map((file: UploadedFile) => `[${file.fileName}]\n${file.content}`)
-        .join('\n\n');
-    }
+    // Extract logs from uploaded files
+    const logEntries = uploadedFiles.map((file: UploadedFile) => `[${file.fileName}]\n${file.content}`);
     
-    // Create v2.0 AnalysisRequest
+    // Create v2.0 AnalysisRequest with proper field separation
     const analysisRequest: AnalysisRequest = {
-      question: fullQuestion,
-      userId: 'frontend_user',
-      requestId: `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+      request_id: `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      question: description.trim(),
+      user_id: 'frontend_user',
+      // Add stacktrace if we have exactly one, combine multiple into one
+      ...(validStackTraces.length > 0 && {
+        stacktrace: validStackTraces.length === 1 
+          ? validStackTraces[0].content.trim()
+          : validStackTraces.map((st: StackTrace, index: number) => `Stack Trace ${index + 1}:\n${st.content.trim()}`).join('\n\n')
+      }),
+      // Add logs from uploaded files
+      ...(logEntries.length > 0 && {
+        logs: logEntries
+      }),
+      created_at: new Date().toISOString()
     };
 
     // Submit the request
