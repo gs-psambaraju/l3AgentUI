@@ -19,9 +19,12 @@ export interface AnalysisRequest {
 // NEW: Async Job Types for v2
 export interface JobProgress {
   currentStep: string;
+  stepMessage?: string;
   completionPercentage: number;
   currentStepIndex: number;
   totalSteps: number;
+  completedSteps?: string[];
+  stepsCompleted?: number;
 }
 
 export interface AnalysisJob {

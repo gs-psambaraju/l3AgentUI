@@ -41,8 +41,8 @@ export const APP_CONFIG = {
   // New async job configuration
   asyncJobConfig: {
     maxConcurrentJobs: 5,
-    pollInterval: 3000, // 3 seconds
-    maxPollAttempts: 100, // 5 minutes max (100 * 3 seconds)
+    pollInterval: 1500, // 1.5 seconds for better responsiveness
+    maxPollAttempts: 200, // 5 minutes max (200 * 1.5 seconds)
     timeoutMs: 300000, // 5 minutes
   },
 };

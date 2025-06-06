@@ -77,6 +77,16 @@ export function useConversation() {
     }));
   }, []);
 
+  // Helper to remove any existing progress messages
+  const clearProgressMessages = useCallback(() => {
+    setConversation(prev => ({
+      ...prev,
+      currentJob: null,
+      isAsyncProcessing: false,
+      messages: prev.messages.filter(msg => msg.type !== 'progress'),
+    }));
+  }, []);
+
   // Helper to process API response
   const processResponse = useCallback((response: AnalysisResponse) => {
     const uiFields = conversationService.extractUIFields(response, conversation.conversationId);
@@ -137,6 +147,9 @@ export function useConversation() {
       if (AsyncJobService.shouldUseAsync(request)) {
         console.log('🔄 Starting async analysis');
         
+        // Clear any existing progress messages first
+        clearProgressMessages();
+        
         setConversation(prev => ({ ...prev, isAsyncProcessing: true }));
         
         // Add progress message
@@ -194,7 +207,7 @@ export function useConversation() {
     } finally {
       setIsLoading(false);
     }
-  }, [addMessage, processResponse, updateProgressMessage]);
+  }, [addMessage, processResponse, updateProgressMessage, clearProgressMessages]);
 
   // Follow-up message function with async support
   const sendFollowUp = useCallback(async (message: string) => {
@@ -240,6 +253,9 @@ export function useConversation() {
 
       if (AsyncJobService.shouldUseAsync(tempRequest)) {
         console.log('🔄 Starting async follow-up');
+        
+        // Clear any existing progress messages first
+        clearProgressMessages();
         
         setConversation(prev => ({ ...prev, isAsyncProcessing: true }));
         
