@@ -196,7 +196,7 @@ export function useConversation() {
     }
   }, [addMessage, processResponse, updateProgressMessage]);
 
-  // Follow-up message function
+  // Follow-up message function with async support
   const sendFollowUp = useCallback(async (message: string) => {
     console.log('🚀 sendFollowUp called with:', {
       message,
@@ -215,6 +215,8 @@ export function useConversation() {
         ...prev,
         status: 'analyzing',
         error: null,
+        currentJob: null,
+        isAsyncProcessing: false,
       }));
 
       // Add user message
@@ -224,22 +226,62 @@ export function useConversation() {
         timestamp: new Date(),
       });
 
-      // Call follow-up API
+      // Call follow-up API with smart async logic
       const followUpRequest: FollowUpRequest = {
         message,
         userId: 'frontend_user', // Could be made configurable
       };
 
-      console.log('📡 Making follow-up API call to:', `${conversation.conversationId}/message`);
-      const response = await conversationService.sendFollowUpMessage(
-        conversation.conversationId,
-        followUpRequest
-      );
-      
-      console.log('✅ Follow-up API response received:', response);
-      
-      // Process response (same as main analysis)
-      processResponse(response);
+      // Create temporary request to check if async is needed
+      const tempRequest: AnalysisRequest = {
+        question: message,
+        user_id: 'frontend_user'
+      };
+
+      if (AsyncJobService.shouldUseAsync(tempRequest)) {
+        console.log('🔄 Starting async follow-up');
+        
+        setConversation(prev => ({ ...prev, isAsyncProcessing: true }));
+        
+        // Add progress message
+        const progressMessage = addMessage({
+          type: 'progress',
+          content: 'Processing follow-up...',
+          timestamp: new Date(),
+        });
+
+        // Call async follow-up API with progress tracking
+        const response = await AsyncJobService.smartFollowUp(
+          conversation.conversationId,
+          followUpRequest,
+          // Progress callback
+          (job: AnalysisJob) => {
+            setConversation(prev => ({ ...prev, currentJob: job }));
+            updateProgressMessage(job);
+          },
+          // Error callback
+          (error: Error) => {
+            console.error('Async follow-up job error:', error);
+          }
+        );
+        
+        // Clear async state and process response
+        setConversation(prev => ({ 
+          ...prev, 
+          isAsyncProcessing: false, 
+          currentJob: null 
+        }));
+        
+        processResponse(response);
+      } else {
+        console.log('⚡ Using sync follow-up');
+        // For sync follow-up, call AsyncJobService directly (it handles sync internally)
+        const response = await AsyncJobService.smartFollowUp(
+          conversation.conversationId,
+          followUpRequest
+        );
+        processResponse(response);
+      }
 
     } catch (error) {
       console.error('❌ Follow-up failed:', error);
@@ -248,6 +290,8 @@ export function useConversation() {
         ...prev,
         status: 'error',
         error: error instanceof Error ? error.message : 'Follow-up failed',
+        isAsyncProcessing: false,
+        currentJob: null,
       }));
       
       addMessage({
@@ -258,7 +302,7 @@ export function useConversation() {
     } finally {
       setIsLoading(false);
     }
-  }, [conversation.conversationId, addMessage, processResponse]);
+  }, [conversation.conversationId, addMessage, processResponse, updateProgressMessage]);
 
   // Reset conversation
   const resetConversation = useCallback(async () => {

@@ -258,6 +258,32 @@ export class AsyncJobService {
   }
 
   /**
+   * Smart follow-up that chooses sync vs async automatically
+   */
+  static async smartFollowUp(
+    conversationId: string,
+    request: FollowUpRequest,
+    onProgress?: (job: AnalysisJob) => void,
+    onError?: (error: Error) => void
+  ): Promise<AnalysisResponse> {
+    // Create a temporary AnalysisRequest to check complexity
+    const tempRequest: AnalysisRequest = {
+      question: request.message,
+      user_id: request.userId
+    };
+
+    if (this.shouldUseAsync(tempRequest)) {
+      console.log('🔄 Using async follow-up for complex message');
+      const job = await this.startAsyncFollowUp(conversationId, request);
+      return await this.pollForCompletion(job.jobId, onProgress, onError);
+    } else {
+      console.log('⚡ Using sync follow-up for simple message');
+      // Use sync follow-up endpoint directly
+      return await this.syncFollowUp(conversationId, request);
+    }
+  }
+
+  /**
    * Direct sync analysis call (to avoid circular dependency)
    */
   private static async syncAnalyze(request: AnalysisRequest): Promise<AnalysisResponse> {
@@ -283,6 +309,36 @@ export class AsyncJobService {
       return result.data;
     } catch (error) {
       console.error('Sync analysis error:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Direct sync follow-up call (to avoid circular dependency)
+   */
+  private static async syncFollowUp(conversationId: string, request: FollowUpRequest): Promise<AnalysisResponse> {
+    try {
+      const response = await fetch(`${this.BASE_URL}${API_ENDPOINTS.CONVERSATION_MESSAGE}/${conversationId}/message`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(request),
+      });
+
+      const result: ApiResponseWrapper<AnalysisResponse> = await response.json();
+      
+      if (!result.success) {
+        throw new Error(result.error || 'Follow-up message failed');
+      }
+
+      if (!result.data) {
+        throw new Error('No data received from follow-up');
+      }
+
+      return result.data;
+    } catch (error) {
+      console.error('Sync follow-up error:', error);
       throw error;
     }
   }
