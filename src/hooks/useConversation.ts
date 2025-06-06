@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
 import { conversationService } from '../services/conversationService';
 import { AsyncJobService } from '../services/asyncJobService';
 import { AnalysisRequest, FollowUpRequest, AnalysisResponse, AnalysisJob } from '../types';
@@ -114,7 +114,7 @@ export function useConversation() {
     }));
   }, [addMessage, conversation.conversationId]);
 
-  // Main analysis function
+  // Main analysis function with async job support
   const analyzeRequest = useCallback(async (request: AnalysisRequest) => {
     try {
       setIsLoading(true);
@@ -122,6 +122,8 @@ export function useConversation() {
         ...prev,
         status: 'analyzing',
         error: null,
+        currentJob: null,
+        isAsyncProcessing: false,
       }));
 
       // Add user message
@@ -131,11 +133,47 @@ export function useConversation() {
         timestamp: new Date(),
       });
 
-      // Call API
-      const response = await conversationService.analyzeQuestion(request);
-      
-      // Process response
-      processResponse(response);
+      // Check if this will be async and add progress message if so
+      if (AsyncJobService.shouldUseAsync(request)) {
+        console.log('🔄 Starting async analysis');
+        
+        setConversation(prev => ({ ...prev, isAsyncProcessing: true }));
+        
+        // Add progress message
+        const progressMessage = addMessage({
+          type: 'progress',
+          content: 'Starting analysis...',
+          timestamp: new Date(),
+        });
+
+        // Call async API with progress tracking
+        const response = await AsyncJobService.smartAnalyze(
+          request,
+          // Progress callback
+          (job: AnalysisJob) => {
+            setConversation(prev => ({ ...prev, currentJob: job }));
+            updateProgressMessage(job);
+          },
+          // Error callback
+          (error: Error) => {
+            console.error('Async job error:', error);
+          }
+        );
+        
+        // Clear async state and process response
+        setConversation(prev => ({ 
+          ...prev, 
+          isAsyncProcessing: false, 
+          currentJob: null 
+        }));
+        
+        processResponse(response);
+      } else {
+        console.log('⚡ Using sync analysis');
+        // For sync analysis, call conversationService directly
+        const response = await conversationService.analyzeQuestion(request);
+        processResponse(response);
+      }
 
     } catch (error) {
       console.error('Analysis failed:', error);
@@ -144,6 +182,8 @@ export function useConversation() {
         ...prev,
         status: 'error',
         error: error instanceof Error ? error.message : 'Analysis failed',
+        isAsyncProcessing: false,
+        currentJob: null,
       }));
       
       addMessage({
@@ -154,7 +194,7 @@ export function useConversation() {
     } finally {
       setIsLoading(false);
     }
-  }, [addMessage, processResponse]);
+  }, [addMessage, processResponse, updateProgressMessage]);
 
   // Follow-up message function
   const sendFollowUp = useCallback(async (message: string) => {

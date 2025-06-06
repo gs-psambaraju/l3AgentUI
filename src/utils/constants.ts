@@ -21,6 +21,7 @@ export const API_ENDPOINTS = {
   SEARCH_WORKFLOWS: '/api/v1/search-workflows',
   HEALTH: '/api/v1/health',
   STATUS: '/api/v1/status',
+  PING: '/api/v1/ping',
   
   // Legacy v1 endpoints (deprecated but kept for compatibility)
   LEGACY_ANALYZE: '/api/v1/analyze',

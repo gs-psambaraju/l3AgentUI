@@ -15,6 +15,7 @@ import {
   ConversationData,
   HealthData
 } from '../types';
+import { AsyncJobService } from './asyncJobService';
 
 const API_BASE_URL = 'http://localhost:8080/l3agent/api/v1';
 
@@ -23,29 +24,13 @@ class ConversationService {
   // ===== PRIMARY ENDPOINTS =====
   
   /**
-   * Main analysis endpoint - handles all question types and creates conversation
+   * Main analysis endpoint - uses smart sync/async decision logic
    */
   async analyzeQuestion(request: AnalysisRequest): Promise<AnalysisResponse> {
     try {
-      const response = await fetch(`${API_BASE_URL}/analyze`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(request),
-      });
-
-      const result: ApiResponseWrapper<AnalysisResponse> = await response.json();
-      
-      if (!result.success) {
-        throw new Error(result.error || 'Analysis failed');
-      }
-
-      if (!result.data) {
-        throw new Error('No data received from analysis');
-      }
-
-      return result.data;
+      // Use AsyncJobService smart decision logic instead of direct v1 call
+      const response = await AsyncJobService.smartAnalyze(request);
+      return response;
     } catch (error) {
       console.error('Analysis error:', error);
       throw error;
@@ -167,9 +152,9 @@ class ConversationService {
     // Debug: Log the full response to understand the structure
     console.log('🔍 API Response Debug:', {
       fullResponse: response,
-      analysisMetadata: response.analysisMetadata,
-      conversationId: response.analysisMetadata?.conversationId,
-      hasConversationId: !!response.analysisMetadata?.conversationId,
+      analysisMetadata: response.analysis_metadata,
+      conversationId: response.analysis_metadata?.conversationId,
+      hasConversationId: !!response.analysis_metadata?.conversationId,
       currentConversationId,
       newConversationId: (response as any).conversation_id,
       hasDisplayMessageHtml: !!(response as any).displayMessageHtml
@@ -178,7 +163,7 @@ class ConversationService {
     // NEW WAY: Use top-level conversation_id field (recommended)
     // Fallback to old ways for backward compatibility
     const conversationId = (response as any).conversation_id ||
-                          response.analysisMetadata?.conversationId || 
+                          response.analysis_metadata?.conversationId || 
                           (response as any).conversationId ||
                           currentConversationId ||
                           // Only generate a new conversation ID if none exists anywhere
@@ -186,7 +171,7 @@ class ConversationService {
 
     console.log('🆔 Conversation ID Resolution:', {
       fromTopLevel: (response as any).conversation_id,
-      fromMetadata: response.analysisMetadata?.conversationId,
+      fromMetadata: response.analysis_metadata?.conversationId,
       fromRoot: (response as any).conversationId,
       fromCurrent: currentConversationId,
       finalId: conversationId
@@ -208,13 +193,13 @@ class ConversationService {
     return {
       mainMessage: mainMessage,
       isHtmlFormatted: !!(response as any).displayMessageHtml,
-      actions: response.nextActions || response.immediateActions || [],
+      actions: response.nextActions || response.immediate_actions || [],
       details: response.thoughtProcess,
       needsEscalation: response.needsEscalation,
       conversationId: conversationId,
-      supportsFollowUp: response.analysisMetadata?.supportsFollowUp !== false, // Default to true for v2.0
-      confidence: response.confidenceLevel,
-      processingTime: response.analysisMetadata?.processingTimeMs
+      supportsFollowUp: response.analysis_metadata?.supportsFollowUp !== false, // Default to true for v2.0
+      confidence: response.confidence_level,
+      processingTime: response.analysis_metadata?.processing_time_ms
     };
   }
 
@@ -222,7 +207,7 @@ class ConversationService {
    * Check if conversation supports follow-up
    */
   canFollowUp(response: AnalysisResponse): boolean {
-    return !!(response.analysisMetadata?.conversationId && response.analysisMetadata?.supportsFollowUp);
+    return !!(response.analysis_metadata?.conversationId && response.analysis_metadata?.supportsFollowUp);
   }
 
   // New v2 API Methods
@@ -366,10 +351,10 @@ class ConversationService {
       question: legacyRequest.description,
       // Note: stacktrace and other fields are not part of AnalysisRequest interface
       // They would need to be included in the question text if needed
-      userId: 'frontend_user'
+      user_id: 'frontend_user'
     };
   }
 }
 
 export const conversationService = new ConversationService();
-export default conversationService; 
+export default conversationService;

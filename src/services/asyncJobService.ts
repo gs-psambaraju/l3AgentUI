@@ -252,9 +252,38 @@ export class AsyncJobService {
       return await this.pollForCompletion(job.jobId, onProgress, onError);
     } else {
       console.log('⚡ Using sync analysis for simple request');
-      // Fall back to regular sync analysis
-      const { conversationService } = await import('./conversationService');
-      return await conversationService.analyzeQuestion(request);
+      // Use sync analysis endpoint directly to avoid circular dependency
+      return await this.syncAnalyze(request);
+    }
+  }
+
+  /**
+   * Direct sync analysis call (to avoid circular dependency)
+   */
+  private static async syncAnalyze(request: AnalysisRequest): Promise<AnalysisResponse> {
+    try {
+      const response = await fetch(`${this.BASE_URL}${API_ENDPOINTS.ANALYZE}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(request),
+      });
+
+      const result: ApiResponseWrapper<AnalysisResponse> = await response.json();
+      
+      if (!result.success) {
+        throw new Error(result.error || 'Analysis failed');
+      }
+
+      if (!result.data) {
+        throw new Error('No data received from analysis');
+      }
+
+      return result.data;
+    } catch (error) {
+      console.error('Sync analysis error:', error);
+      throw error;
     }
   }
 } 
