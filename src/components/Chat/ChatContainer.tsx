@@ -184,7 +184,7 @@ export function ChatContainer() {
         )}
 
         {/* Async job progress indicator */}
-        {conversation.isAsyncProcessing && conversation.currentJob && (
+        {conversation.isAsyncProcessing && conversation.currentJob && !conversation.messages.some(m => m.type === 'progress') && (
           <ProgressIndicator 
             job={conversation.currentJob}
             className="mb-4"

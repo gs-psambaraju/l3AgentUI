@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useRef, useEffect } from 'react';
 import { conversationService } from '../services/conversationService';
 import { AsyncJobService } from '../services/asyncJobService';
 import { AnalysisRequest, FollowUpRequest, AnalysisResponse, AnalysisJob } from '../types';
@@ -11,7 +11,7 @@ interface Message {
   confidence?: number;
   reasoning?: string;
   isHtmlFormatted?: boolean;
-  job?: AnalysisJob; // For progress messages
+  job?: AnalysisJob;
 }
 
 interface ConversationState {
@@ -19,21 +19,18 @@ interface ConversationState {
   messages: Message[];
   status: 'idle' | 'analyzing' | 'completed' | 'error';
   error: string | null;
-  
-  // Response data
   displayMessage: string | null;
   nextActions: string[];
   needsEscalation: boolean;
   thoughtProcess: string | null;
   confidence: 'HIGH' | 'MEDIUM' | 'LOW' | null;
-  
-  // Async job data
   currentJob: AnalysisJob | null;
   isAsyncProcessing: boolean;
+  activeJobId: string | null;
 }
 
 export function useConversation() {
-  const [conversation, setConversation] = useState<ConversationState>({
+  const [conversation, setConversation] = React.useState<ConversationState>({
     conversationId: null,
     messages: [],
     status: 'idle',
@@ -45,279 +42,204 @@ export function useConversation() {
     confidence: null,
     currentJob: null,
     isAsyncProcessing: false,
+    activeJobId: null,
   });
 
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = React.useState(false);
 
-  // Helper to add messages
-  const addMessage = useCallback((message: Omit<Message, 'id'>) => {
-    const newMessage: Message = {
-      ...message,
-      id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
-    };
+  // Simple progress update 
+  const addOrUpdateProgress = React.useCallback((job: AnalysisJob) => {
+    console.log('🔄 Progress Update:', job.jobId, job.progress?.currentStep);
     
     setConversation(prev => {
-      let updatedMessages = [...prev.messages];
-      
-      // If adding a progress message, remove any existing progress messages first
-      if (message.type === 'progress') {
-        updatedMessages = updatedMessages.filter(msg => msg.type !== 'progress');
-      }
-      
-      return {
-        ...prev,
-        messages: [...updatedMessages, newMessage],
-      };
-    });
-    
-    return newMessage;
-  }, []);
-
-  // Helper to update progress message
-  const updateProgressMessage = useCallback((job: AnalysisJob) => {
-    setConversation(prev => ({
-      ...prev,
-      currentJob: job,
-      messages: prev.messages.map(msg => 
+      const existingIndex = prev.messages.findIndex(msg => 
         msg.type === 'progress' && msg.job?.jobId === job.jobId
-          ? { ...msg, job, content: job.progress.currentStep, timestamp: new Date() }
-          : msg
-      ),
-    }));
+      );
+      
+      if (existingIndex >= 0) {
+        // Update existing progress message
+        const updatedMessages = [...prev.messages];
+        updatedMessages[existingIndex] = {
+          ...updatedMessages[existingIndex],
+          job,
+          content: job.progress?.currentStep || 'Processing...',
+        };
+        return { ...prev, messages: updatedMessages, currentJob: job };
+      } else {
+        // Add new progress message
+        const progressMessage = {
+          id: Date.now().toString() + '_progress',
+          type: 'progress' as const,
+          content: job.progress?.currentStep || 'Processing...',
+          timestamp: new Date(),
+          job
+        };
+        return { 
+          ...prev, 
+          messages: [...prev.messages, progressMessage],
+          currentJob: job,
+          activeJobId: job.jobId
+        };
+      }
+    });
   }, []);
-
-
 
   // Helper to process API response
-  const processResponse = useCallback((response: AnalysisResponse) => {
-    const uiFields = conversationService.extractUIFields(response, conversation.conversationId);
+  const processResponse = React.useCallback((response: AnalysisResponse, currentConversationId: string | null) => {
+    const uiFields = conversationService.extractUIFields(response, currentConversationId);
     
-    // Debug: Log conversation state changes
-    console.log('🔄 Processing Response:', {
-      currentConversationId: conversation.conversationId,
-      newConversationId: uiFields.conversationId,
-      isHtmlFormatted: uiFields.isHtmlFormatted,
-      hasActiveConversation: !!uiFields.conversationId
-    });
+    console.log('🔄 Processing Response');
     
-    // Add bot message with the main response
-    addMessage({
-      type: 'bot',
+    // Add bot response
+    const botMessage = {
+      id: Date.now().toString() + '_bot',
+      type: 'bot' as const,
       content: uiFields.mainMessage,
       timestamp: new Date(),
       confidence: response.confidence_level === 'HIGH' ? 0.9 : 
                  response.confidence_level === 'MEDIUM' ? 0.7 : 0.5,
       reasoning: uiFields.details,
       isHtmlFormatted: uiFields.isHtmlFormatted,
-    });
+    };
 
-    // Update conversation state - Always use the conversation ID from uiFields
     setConversation(prev => ({
       ...prev,
+      messages: [...prev.messages, botMessage],
       conversationId: uiFields.conversationId,
-      status: 'completed',
+      status: 'completed' as const,
       error: null,
       displayMessage: uiFields.mainMessage,
       nextActions: uiFields.actions,
       needsEscalation: uiFields.needsEscalation,
       thoughtProcess: uiFields.details,
       confidence: response.confidence_level || null,
+      isAsyncProcessing: false,
+      currentJob: null,
+      activeJobId: null,
     }));
-  }, [addMessage, conversation.conversationId]);
+  }, []);
 
-  // Main analysis function with async job support
-  const analyzeRequest = useCallback(async (request: AnalysisRequest) => {
+  const analyzeRequest = React.useCallback(async (request: AnalysisRequest) => {
     try {
+      console.log('🔍 Starting analysis:', request.question);
       setIsLoading(true);
-      setConversation(prev => ({
-        ...prev,
-        status: 'analyzing',
-        error: null,
-        currentJob: null,
-        isAsyncProcessing: false,
-      }));
-
+      
       // Add user message
-      addMessage({
-        type: 'user',
+      const userMessage = {
+        id: Date.now().toString(),
+        type: 'user' as const,
         content: request.question,
         timestamp: new Date(),
-      });
+      };
+      
+      setConversation(prev => ({
+        ...prev,
+        messages: [...prev.messages, userMessage],
+        status: 'analyzing' as const,
+        error: null,
+      }));
 
-      // Check if this will be async and add progress message if so
+      // Check if async processing is needed
       if (AsyncJobService.shouldUseAsync(request)) {
         console.log('🔄 Starting async analysis');
         
         setConversation(prev => ({ ...prev, isAsyncProcessing: true }));
         
-        // Add progress message (automatically clears existing progress messages)
-        const progressMessage = addMessage({
-          type: 'progress',
-          content: 'Starting analysis...',
-          timestamp: new Date(),
-        });
-
-        // Call async API with progress tracking
-        const response = await AsyncJobService.smartAnalyze(
-          request,
-          // Progress callback
-          (job: AnalysisJob) => {
-            setConversation(prev => ({ ...prev, currentJob: job }));
-            updateProgressMessage(job);
-          },
-          // Error callback
-          (error: Error) => {
-            console.error('Async job error:', error);
-          }
+        const initialJob = await AsyncJobService.startAsyncAnalysis(request);
+        if (!initialJob?.jobId) throw new Error('Invalid job data');
+        
+        // Add initial progress
+        addOrUpdateProgress(initialJob);
+        
+        // Poll for completion
+        const response = await AsyncJobService.pollForCompletion(
+          initialJob.jobId,
+          addOrUpdateProgress,
+          (error: Error) => console.error('Job error:', error)
         );
         
-        // Clear async state and process response
-        setConversation(prev => ({ 
-          ...prev, 
-          isAsyncProcessing: false, 
-          currentJob: null 
-        }));
-        
-        processResponse(response);
+        processResponse(response, conversation.conversationId);
       } else {
         console.log('⚡ Using sync analysis');
-        // For sync analysis, call conversationService directly
         const response = await conversationService.analyzeQuestion(request);
-        processResponse(response);
+        processResponse(response, conversation.conversationId);
       }
 
     } catch (error) {
       console.error('Analysis failed:', error);
       
+      const errorMessage = {
+        id: Date.now().toString() + '_error',
+        type: 'system' as const,
+        content: `Error: ${error instanceof Error ? error.message : 'Analysis failed'}`,
+        timestamp: new Date(),
+      };
+      
       setConversation(prev => ({
         ...prev,
-        status: 'error',
+        messages: [...prev.messages, errorMessage],
+        status: 'error' as const,
         error: error instanceof Error ? error.message : 'Analysis failed',
         isAsyncProcessing: false,
         currentJob: null,
+        activeJobId: null,
       }));
-      
-      addMessage({
-        type: 'system',
-        content: `Error: ${error instanceof Error ? error.message : 'Analysis failed'}`,
-        timestamp: new Date(),
-      });
     } finally {
       setIsLoading(false);
     }
-  }, [addMessage, processResponse, updateProgressMessage]);
+  }, [processResponse, addOrUpdateProgress, conversation.conversationId]);
 
-  // Follow-up message function with async support
-  const sendFollowUp = useCallback(async (message: string) => {
-    console.log('🚀 sendFollowUp called with:', {
-      message,
-      conversationId: conversation.conversationId,
-      hasConversationId: !!conversation.conversationId
-    });
-
+  const sendFollowUp = React.useCallback(async (message: string) => {
     if (!conversation.conversationId) {
-      console.error('❌ No conversation ID available for follow-up');
       throw new Error('No active conversation for follow-up');
     }
 
     try {
       setIsLoading(true);
-      setConversation(prev => ({
-        ...prev,
-        status: 'analyzing',
-        error: null,
-        currentJob: null,
-        isAsyncProcessing: false,
-      }));
-
-      // Add user message
-      addMessage({
-        type: 'user',
+      
+      const userMessage = {
+        id: Date.now().toString(),
+        type: 'user' as const,
         content: message,
         timestamp: new Date(),
-      });
-
-      // Call follow-up API with smart async logic
-      const followUpRequest: FollowUpRequest = {
-        message,
-        userId: 'frontend_user', // Could be made configurable
       };
+      
+      setConversation(prev => ({
+        ...prev,
+        messages: [...prev.messages, userMessage],
+        status: 'analyzing' as const,
+        error: null,
+      }));
 
-      // Create temporary request to check if async is needed
-      const tempRequest: AnalysisRequest = {
-        question: message,
-        user_id: 'frontend_user'
-      };
-
-      if (AsyncJobService.shouldUseAsync(tempRequest)) {
-        console.log('🔄 Starting async follow-up');
-        
-        setConversation(prev => ({ ...prev, isAsyncProcessing: true }));
-        
-        // Add progress message (automatically clears existing progress messages)
-        const progressMessage = addMessage({
-          type: 'progress',
-          content: 'Processing follow-up...',
-          timestamp: new Date(),
-        });
-
-        // Call async follow-up API with progress tracking
-        const response = await AsyncJobService.smartFollowUp(
-          conversation.conversationId,
-          followUpRequest,
-          // Progress callback
-          (job: AnalysisJob) => {
-            setConversation(prev => ({ ...prev, currentJob: job }));
-            updateProgressMessage(job);
-          },
-          // Error callback
-          (error: Error) => {
-            console.error('Async follow-up job error:', error);
-          }
-        );
-        
-        // Clear async state and process response
-        setConversation(prev => ({ 
-          ...prev, 
-          isAsyncProcessing: false, 
-          currentJob: null 
-        }));
-        
-        processResponse(response);
-      } else {
-        console.log('⚡ Using sync follow-up');
-        // For sync follow-up, call AsyncJobService directly (it handles sync internally)
-        const response = await AsyncJobService.smartFollowUp(
-          conversation.conversationId,
-          followUpRequest
-        );
-        processResponse(response);
-      }
+      const followUpRequest: FollowUpRequest = { message, userId: 'frontend_user' };
+      
+      // Use sync follow-up for stability
+      console.log('⚡ Using sync follow-up');
+      const response = await AsyncJobService.smartFollowUp(conversation.conversationId, followUpRequest);
+      processResponse(response, conversation.conversationId);
 
     } catch (error) {
       console.error('❌ Follow-up failed:', error);
       
-      setConversation(prev => ({
-        ...prev,
-        status: 'error',
-        error: error instanceof Error ? error.message : 'Follow-up failed',
-        isAsyncProcessing: false,
-        currentJob: null,
-      }));
-      
-      addMessage({
-        type: 'system',
+      const errorMessage = {
+        id: Date.now().toString() + '_error',
+        type: 'system' as const,
         content: `Error: ${error instanceof Error ? error.message : 'Follow-up failed'}`,
         timestamp: new Date(),
-      });
+      };
+      
+      setConversation(prev => ({
+        ...prev,
+        messages: [...prev.messages, errorMessage],
+        status: 'error' as const,
+        error: error instanceof Error ? error.message : 'Follow-up failed',
+      }));
     } finally {
       setIsLoading(false);
     }
-  }, [conversation.conversationId, addMessage, processResponse, updateProgressMessage]);
+  }, [processResponse, conversation.conversationId]);
 
-  // Reset conversation
-  const resetConversation = useCallback(async () => {
-    // Clean up server-side conversation if exists
+  const resetConversation = React.useCallback(async () => {
     if (conversation.conversationId) {
       try {
         await conversationService.deleteConversation(conversation.conversationId);
@@ -326,7 +248,7 @@ export function useConversation() {
       }
     }
 
-    // Reset local state
+    console.log('🔄 Reset conversation');
     setConversation({
       conversationId: null,
       messages: [],
@@ -339,78 +261,20 @@ export function useConversation() {
       confidence: null,
       currentJob: null,
       isAsyncProcessing: false,
+      activeJobId: null,
     });
-    
     setIsLoading(false);
   }, [conversation.conversationId]);
 
-  // Load conversation history (for page refresh scenarios)
-  const loadConversationHistory = useCallback(async (conversationId: string) => {
-    try {
-      setIsLoading(true);
-      
-      const conversationData = await conversationService.getConversationHistory(conversationId);
-      
-      // Convert history to messages
-      const messages: Message[] = conversationData.history.map((turn, index) => ({
-        id: `${conversationId}_${index}`,
-        type: turn.role === 'user' ? 'user' : 'bot',
-        content: turn.message,
-        timestamp: new Date(turn.timestamp),
-      }));
-
-      setConversation(prev => ({
-        ...prev,
-        conversationId,
-        messages,
-        status: 'completed',
-      }));
-
-    } catch (error) {
-      console.error('Failed to load conversation history:', error);
-      setConversation(prev => ({
-        ...prev,
-        status: 'error',
-        error: error instanceof Error ? error.message : 'Failed to load conversation',
-      }));
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
-
-  // Computed properties
-  const hasActiveConversation = conversation.conversationId !== null;
-  const canFollowUp = hasActiveConversation && !conversation.needsEscalation;
-  const hasActions = conversation.nextActions.length > 0;
-
-  // Debug: Log computed properties
-  console.log('🧮 Computed Properties:', {
-    conversationId: conversation.conversationId,
-    hasActiveConversation,
-    canFollowUp,
-    hasActions,
-    needsEscalation: conversation.needsEscalation,
-    messagesCount: conversation.messages.length
-  });
-
   return {
-    // State
     conversation,
-    isLoading,
-    
-    // Actions
     analyzeRequest,
     sendFollowUp,
     resetConversation,
-    loadConversationHistory,
-    
-    // Computed properties
-    hasActiveConversation,
-    canFollowUp,
-    hasActions,
-    
-    // Legacy compatibility (for existing components)
-    hasQuestions: false, // v2.0 doesn't use interactive questions
+    isLoading,
+    hasActiveConversation: Boolean(conversation.conversationId),
+    canFollowUp: Boolean(conversation.conversationId) && !conversation.needsEscalation,
+    hasActions: conversation.nextActions.length > 0,
     hasResolution: conversation.status === 'completed' && !conversation.needsEscalation,
     isEscalated: conversation.needsEscalation,
   };
