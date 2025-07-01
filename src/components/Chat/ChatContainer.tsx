@@ -38,20 +38,13 @@ export function ChatContainer() {
       conversationId: conversation.conversationId,
       needsEscalation: conversation.needsEscalation,
       status: conversation.status,
-      willUseFollowUp: hasActiveConversation && canFollowUp,
       question: data.question
     });
 
-    // TEMPORARY FIX: Force follow-up if we have a conversation ID
-    if (conversation.conversationId) {
-      // If we have an active conversation, send as follow-up
-      console.log('📤 Sending follow-up message to conversation:', conversation.conversationId);
-      await sendFollowUp(data.question);
-    } else {
-      // Otherwise start new analysis
-      console.log('🆕 Starting new analysis (no active conversation or cannot follow up)');
-      await analyzeRequest(data);
-    }
+    // For now, always start a new analysis to avoid confusion
+    // The backend can handle conversation continuity if needed
+    console.log('🆕 Starting new analysis');
+    await analyzeRequest(data);
   };
 
   const copyToClipboard = (text: string) => {

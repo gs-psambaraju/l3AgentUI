@@ -1,7 +1,11 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { Play, AlertCircle, Plus, X, Upload, FileText, Trash2, Bug, Paperclip } from 'lucide-react';
-import { InputAreaProps, AnalysisRequest } from '../../types';
+import { InputAreaProps, AnalysisRequest, DetectedTicket } from '../../types';
 import Button from '../Common/Button';
+import { TicketChip } from './TicketChip';
+import { hasJiraTickets, extractJiraTicketIds } from '../../utils/jiraUtils';
+import JiraService from '../../services/jiraService';
+import { EnhancedAnalysisService, EnhancedAnalysisRequest } from '../../services/enhancedAnalysisService';
 
 interface StackTrace {
   id: string;
@@ -30,6 +34,10 @@ export function InputArea({
   const [showStackTraceModal, setShowStackTraceModal] = useState(false);
   const [showFileModal, setShowFileModal] = useState(false);
   const [dragActive, setDragActive] = useState(false);
+  
+  // Jira integration state - chip/tag based UX
+  const [detectedTickets, setDetectedTickets] = useState<DetectedTicket[]>([]);
+  const [hiddenTickets, setHiddenTickets] = useState<Set<string>>(new Set());
 
   const addStackTrace = () => {
     const newStackTrace: StackTrace = {
@@ -48,17 +56,17 @@ export function InputArea({
   };
 
   const handleFileUpload = useCallback((files: FileList) => {
-    const maxSize = 1024 * 1024; // 1MB
+    const maxSize = 10 * 1024 * 1024; // 10MB (updated from 1MB)
     const allowedTypes = ['text/plain', 'text/log', 'application/octet-stream'];
     
     Array.from(files).forEach(file => {
       if (file.size > maxSize) {
-        setError(`File ${file.name} is too large. Maximum size is 1MB.`);
+        setError(`File ${file.name} is too large. Maximum size is 10MB.`);
         return;
       }
 
       if (!allowedTypes.includes(file.type) && !file.name.match(/\.(txt|log)$/i)) {
-        setError(`File ${file.name} is not supported. Please upload .txt or .log files.`);
+        setError(`File ${file.name} is not supported. Only .txt and .log files are supported.`);
         return;
       }
 
@@ -102,7 +110,7 @@ export function InputArea({
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
     if (!description.trim()) {
@@ -114,40 +122,85 @@ export function InputArea({
       setError('Description must be at least 10 characters long');
       return;
     }
+    
+    if (description.trim().length > 10000) {
+      setError('Question is too long. Maximum 10,000 characters allowed.');
+      return;
+    }
 
     setError('');
     
     // Extract stack traces
     const validStackTraces = stackTraces.filter((st: StackTrace) => st.content.trim());
     
-    // Extract logs from uploaded files
-    const logEntries = uploadedFiles.map((file: UploadedFile) => `[${file.fileName}]\n${file.content}`);
+    // Check if we have files to upload vs text logs
+    const hasFilesToUpload = uploadedFiles.length > 0;
     
-    // Create v2.0 AnalysisRequest with proper field separation
-    const analysisRequest: AnalysisRequest = {
-      request_id: `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-      question: description.trim(),
-      user_id: 'frontend_user',
-      // Add stacktrace if we have exactly one, combine multiple into one
-      ...(validStackTraces.length > 0 && {
-        stacktrace: validStackTraces.length === 1 
+    // Validate files if present
+    if (hasFilesToUpload) {
+      const enhancedFiles = EnhancedAnalysisService.convertLegacyFiles(uploadedFiles);
+      const validation = EnhancedAnalysisService.validateFiles(enhancedFiles);
+      
+      if (!validation.isValid) {
+        setError(validation.errors.join('. '));
+        return;
+      }
+    }
+    
+    try {
+      // Always use original description - backend will handle Jira ID extraction and enrichment
+      const finalQuestion = description.trim();
+      
+      // Create enhanced analysis request
+      const enhancedRequest: EnhancedAnalysisRequest = {
+        request_id: `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        question: finalQuestion,
+        user_id: 'frontend_user',
+        created_at: new Date().toISOString()
+      };
+      
+      // Add stacktrace if available
+      if (validStackTraces.length > 0) {
+        enhancedRequest.stacktrace = validStackTraces.length === 1 
           ? validStackTraces[0].content.trim()
-          : validStackTraces.map((st: StackTrace, index: number) => `Stack Trace ${index + 1}:\n${st.content.trim()}`).join('\n\n')
-      }),
-      // Add logs from uploaded files
-      ...(logEntries.length > 0 && {
-        logs: logEntries
-      }),
-      created_at: new Date().toISOString()
-    };
+          : validStackTraces.map((st: StackTrace, index: number) => `Stack Trace ${index + 1}:\n${st.content.trim()}`).join('\n\n');
+      }
+      
+      if (hasFilesToUpload) {
+        // Use multipart form data for file uploads
+        enhancedRequest.uploadedFiles = EnhancedAnalysisService.convertLegacyFiles(uploadedFiles);
+        console.log('📁 Submitting with file uploads:', enhancedRequest.uploadedFiles.map(f => f.fileName));
+      }
+      // No logs array conversion - keep it simple!
 
-    // Submit the request
-    onSubmit(analysisRequest);
+      // Create a compatible AnalysisRequest for the existing onSubmit handler
+      const compatibleRequest: AnalysisRequest = {
+        request_id: enhancedRequest.request_id,
+        question: enhancedRequest.question,
+        stacktrace: enhancedRequest.stacktrace,
+        user_id: enhancedRequest.user_id,
+        created_at: enhancedRequest.created_at
+      };
 
-    // Clear form after submission
-    setDescription('');
-    setStackTraces([]);
-    setUploadedFiles([]);
+      // Add enhanced request data for dual-format support
+      if (hasFilesToUpload) {
+        (compatibleRequest as any).uploadedFiles = EnhancedAnalysisService.convertLegacyFiles(uploadedFiles);
+      }
+
+      // Submit the request (this will handle the response)
+      onSubmit(compatibleRequest);
+
+      // Clear form after submission
+      setDescription('');
+      setStackTraces([]);
+      setUploadedFiles([]);
+      setDetectedTickets([]);
+      setHiddenTickets(new Set());
+      
+    } catch (error) {
+      console.error('Analysis submission error:', error);
+      setError(error instanceof Error ? error.message : 'Failed to submit analysis request');
+    }
   };
 
   const getButtonText = () => {
@@ -181,6 +234,56 @@ export function InputArea({
     return stackTraces.filter((st: StackTrace) => st.content.trim()).length + uploadedFiles.length;
   };
 
+  // Handle removing/hiding ticket chips
+  const handleRemoveTicket = (ticketId: string) => {
+    setHiddenTickets(prev => new Set([...prev, ticketId]));
+  };
+
+  // Get visible tickets (not hidden by user)
+  const getVisibleTickets = () => {
+    return detectedTickets.filter(ticket => !hiddenTickets.has(ticket.ticketId));
+  };
+
+  // Jira detection effect - simplified for inline summaries
+  useEffect(() => {
+    const handleJiraDetection = async () => {
+      if (!description.trim()) {
+        setDetectedTickets([]);
+        return;
+      }
+
+      if (hasJiraTickets(description)) {
+        const ticketIds = extractJiraTicketIds(description);
+        // Set detecting state
+        const detectingTickets = ticketIds.map(ticketId => ({
+          ticketId,
+          status: 'loading' as const
+        }));
+        setDetectedTickets(detectingTickets);
+
+        try {
+          // Fetch ticket summaries for chip display
+          const fetchedTickets = await JiraService.fetchTickets(ticketIds);
+          setDetectedTickets(fetchedTickets);
+        } catch (error) {
+          console.error('Jira summary fetch error:', error);
+          const errorTickets = detectingTickets.map(ticket => ({
+            ...ticket,
+            status: 'error' as const,
+            error: 'Failed to fetch summary'
+          }));
+          setDetectedTickets(errorTickets);
+        }
+              } else {
+          setDetectedTickets([]);
+        }
+    };
+
+    // Debounce the Jira detection
+    const timeoutId = setTimeout(handleJiraDetection, 800);
+    return () => clearTimeout(timeoutId);
+  }, [description]);
+
   return (
     <>
       {/* Full-width responsive input area */}
@@ -192,6 +295,24 @@ export function InputArea({
               <div className="flex items-center space-x-2 text-red-400 text-sm bg-red-900/20 border border-red-700/30 rounded-lg p-3 backdrop-blur-sm">
                 <AlertCircle className="w-4 h-4 flex-shrink-0" />
                 <span className="font-medium">{error}</span>
+              </div>
+            )}
+
+            {/* Ticket Chips - show detected tickets as removable chips */}
+            {getVisibleTickets().length > 0 && (
+              <div className="space-y-2">
+                <div className="text-xs text-gray-400 font-medium">
+                  Detected Jira Tickets:
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {getVisibleTickets().map((ticket) => (
+                    <TicketChip
+                      key={ticket.ticketId}
+                      ticket={ticket}
+                      onRemove={handleRemoveTicket}
+                    />
+                  ))}
+                </div>
               </div>
             )}
 
@@ -222,10 +343,10 @@ export function InputArea({
                   onChange={(e) => setDescription(e.target.value)}
                   placeholder={
                     isNewChat 
-                      ? "Describe your issue, ask a technical question, or explain the problem you're experiencing..."
+                      ? "Describe your issue, ask a technical question, or reference Jira tickets (e.g., GE-12345)..."
                       : hasIntegratedContent
                       ? "What did you find? Let me know how it goes..."
-                      : "Ask another question or describe a different issue..."
+                      : "Ask another question, describe a different issue, or reference Jira tickets..."
                   }
                   className="w-full p-3 border border-gray-600 rounded-lg bg-gray-800 text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 resize-none leading-6 placeholder-gray-400 text-sm sm:text-base"
                   disabled={isLoading}
@@ -293,7 +414,7 @@ export function InputArea({
                   variant="primary"
                   size="md"
                   isLoading={isLoading}
-                  disabled={!description.trim() || description.trim().length < 10 || isLoading}
+                  disabled={!description.trim() || description.trim().length < 10 || description.trim().length > 10000 || isLoading}
                   className="flex-shrink-0"
                 >
                   <div className="flex items-center space-x-1 sm:space-x-2">
@@ -306,8 +427,12 @@ export function InputArea({
 
             {/* Character count */}
             <div className="text-xs text-gray-500 text-right">
-              <span className={description.length < 10 ? 'text-red-400' : 'text-green-400'}>
-                {description.length} characters (min: 10)
+              <span className={
+                description.length < 10 ? 'text-red-400' : 
+                description.length > 10000 ? 'text-red-400' : 
+                'text-green-400'
+              }>
+                {description.length} / 10,000 characters (min: 10)
               </span>
             </div>
           </form>
@@ -430,7 +555,7 @@ export function InputArea({
                     </label>
                   </div>
                   <div className="text-xs sm:text-sm text-secondary-500">
-                    Supports .txt and .log files (max 1MB each)
+                    Supports .txt and .log files (max 10MB each)
                   </div>
                 </div>
               </div>

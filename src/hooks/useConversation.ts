@@ -1,4 +1,4 @@
-import React, { useRef, useEffect } from 'react';
+import React from 'react';
 import { conversationService } from '../services/conversationService';
 import { AsyncJobService } from '../services/asyncJobService';
 import { AnalysisRequest, FollowUpRequest, AnalysisResponse, AnalysisJob } from '../types';
@@ -46,6 +46,9 @@ export function useConversation() {
   });
 
   const [isLoading, setIsLoading] = React.useState(false);
+  
+  // Add a ref to track if an analysis is already in progress
+  const analysisInProgress = React.useRef(false);
 
   // Simple progress update 
   const addOrUpdateProgress = React.useCallback((job: AnalysisJob) => {
@@ -120,7 +123,14 @@ export function useConversation() {
   }, []);
 
   const analyzeRequest = React.useCallback(async (request: AnalysisRequest) => {
+    // Prevent duplicate calls
+    if (analysisInProgress.current) {
+      console.log('🚫 Analysis already in progress, skipping duplicate call');
+      return;
+    }
+    
     try {
+      analysisInProgress.current = true;
       console.log('🔍 Starting analysis:', request.question);
       setIsLoading(true);
       
@@ -139,30 +149,59 @@ export function useConversation() {
         error: null,
       }));
 
-      // Check if async processing is needed
-      if (AsyncJobService.shouldUseAsync(request)) {
-        console.log('🔄 Starting async analysis');
+      // Capture current conversationId
+      let currentConversationId: string | null = null;
+      setConversation(prev => {
+        currentConversationId = prev.conversationId;
+        return prev;
+      });
+
+      // Check if this is an enhanced request with files
+      const hasFiles = (request as any).uploadedFiles && (request as any).uploadedFiles.length > 0;
+      
+      if (hasFiles) {
+        // Use EnhancedAnalysisService for file uploads
+        console.log('📁 Using EnhancedAnalysisService for file uploads');
+        const { EnhancedAnalysisService } = await import('../services/enhancedAnalysisService');
         
-        setConversation(prev => ({ ...prev, isAsyncProcessing: true }));
+        const enhancedRequest = {
+          ...request,
+          uploadedFiles: (request as any).uploadedFiles
+        };
         
-        const initialJob = await AsyncJobService.startAsyncAnalysis(request);
-        if (!initialJob?.jobId) throw new Error('Invalid job data');
-        
-        // Add initial progress
-        addOrUpdateProgress(initialJob);
-        
-        // Poll for completion
-        const response = await AsyncJobService.pollForCompletion(
-          initialJob.jobId,
+        const response = await EnhancedAnalysisService.submitAnalysis(
+          enhancedRequest,
           addOrUpdateProgress,
           (error: Error) => console.error('Job error:', error)
         );
         
-        processResponse(response, conversation.conversationId);
+        processResponse(response, currentConversationId);
       } else {
-        console.log('⚡ Using sync analysis');
-        const response = await conversationService.analyzeQuestion(request);
-        processResponse(response, conversation.conversationId);
+        // Use regular AsyncJobService for text-only requests
+        if (AsyncJobService.shouldUseAsync(request)) {
+          console.log('🔄 Starting async analysis');
+          
+          setConversation(prev => ({ ...prev, isAsyncProcessing: true }));
+          
+          const initialJob = await AsyncJobService.startAsyncAnalysis(request);
+          if (!initialJob?.jobId) throw new Error('Invalid job data');
+          
+          // Add initial progress
+          addOrUpdateProgress(initialJob);
+          
+          // Poll for completion
+          const response = await AsyncJobService.pollForCompletion(
+            initialJob.jobId,
+            addOrUpdateProgress,
+            (error: Error) => console.error('Job error:', error)
+          );
+          
+          processResponse(response, currentConversationId);
+        } else {
+          console.log('⚡ Using sync analysis');
+          const response = await conversationService.analyzeQuestion(request);
+          processResponse(response, currentConversationId);
+        }
       }
 
     } catch (error) {
@@ -185,12 +224,16 @@ export function useConversation() {
         activeJobId: null,
       }));
     } finally {
+      analysisInProgress.current = false;
       setIsLoading(false);
     }
-  }, [processResponse, addOrUpdateProgress, conversation.conversationId]);
+  }, [processResponse, addOrUpdateProgress]);
 
   const sendFollowUp = React.useCallback(async (message: string) => {
-    if (!conversation.conversationId) {
+    // Get current conversationId from state instead of closure
+    const currentConversationId = conversation.conversationId;
+    
+    if (!currentConversationId) {
       throw new Error('No active conversation for follow-up');
     }
 
@@ -215,8 +258,8 @@ export function useConversation() {
       
       // Use sync follow-up for stability
       console.log('⚡ Using sync follow-up');
-      const response = await AsyncJobService.smartFollowUp(conversation.conversationId, followUpRequest);
-      processResponse(response, conversation.conversationId);
+      const response = await AsyncJobService.smartFollowUp(currentConversationId, followUpRequest);
+      processResponse(response, currentConversationId);
 
     } catch (error) {
       console.error('❌ Follow-up failed:', error);
@@ -237,12 +280,14 @@ export function useConversation() {
     } finally {
       setIsLoading(false);
     }
-  }, [processResponse, conversation.conversationId]);
+  }, [processResponse]);
 
   const resetConversation = React.useCallback(async () => {
-    if (conversation.conversationId) {
+    const currentConversationId = conversation.conversationId;
+    
+    if (currentConversationId) {
       try {
-        await conversationService.deleteConversation(conversation.conversationId);
+        await conversationService.deleteConversation(currentConversationId);
       } catch (error) {
         console.warn('Failed to delete conversation:', error);
       }
@@ -264,7 +309,7 @@ export function useConversation() {
       activeJobId: null,
     });
     setIsLoading(false);
-  }, [conversation.conversationId]);
+  }, []);
 
   return {
     conversation,

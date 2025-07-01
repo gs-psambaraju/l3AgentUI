@@ -11,10 +11,17 @@ export const apiClient: AxiosInstance = axios.create({
   timeout: APP_CONFIG.apiTimeout,
 });
 
-// Request interceptor for logging and auth (if needed in future)
+// Request interceptor for logging and auth
 apiClient.interceptors.request.use(
   (config) => {
     console.log(`API Request: ${config.method?.toUpperCase()} ${config.url}`);
+    
+    // Add authentication token if available
+    const token = localStorage.getItem('l3agent_auth_token');
+    if (token) {
+      config.headers['authToken'] = token;
+    }
+    
     return config;
   },
   (error) => {

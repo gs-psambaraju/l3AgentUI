@@ -37,30 +37,13 @@ const ProgressIndicator: React.FC<ProgressIndicatorProps> = ({ job, className = 
   // Store completed timestamps to prevent dynamic changes
   const completedTimestamps = useRef<Map<number, string>>(new Map());
 
-  // Default step templates for fallback (when API data is unavailable)
-  const defaultSteps = [
-    "Understanding the issue...",
-    "Loading knowledge base...",
-    "Analyzing root causes...", 
-    "Developing solutions...",
-    "Finalizing response..."
-  ];
+  // Removed hardcoded messages - backend will provide proper step messages
 
-  // ServiceNow-specific steps for better UX
-  const serviceNowSteps = [
-    "Analyzing ServiceNow question and understanding the specific issue",
-    "Loading ServiceNow knowledge base and identifying relevant patterns", 
-    "Analyzing ServiceNow configuration and identifying potential root causes",
-    "Developing tailored solution for ServiceNow connector issue",
-    "Crafting targeted solutions and step-by-step remediation actions"
-  ];
-
-  // Process progress data into thinking steps with smart interpolation
+  // Process progress data into thinking steps - API-driven, no placeholders
   const processThinkingSteps = (): ThinkingStep[] => {
     const steps: ThinkingStep[] = [];
     const completedSteps = progress.completedSteps || [];
     const stepsCompleted = progress.stepsCompleted || progress.currentStepIndex || 0;
-    const totalSteps = progress.totalSteps || 5; // Fallback to 5 steps
     
     // Debug: Log the actual data we're working with
     console.log('🔍 ProgressIndicator processing:', {
@@ -69,42 +52,15 @@ const ProgressIndicator: React.FC<ProgressIndicatorProps> = ({ job, className = 
       completedSteps: completedSteps,
       completedStepsLength: completedSteps.length,
       stepsCompleted,
-      totalSteps,
+      totalSteps: progress.totalSteps,
       currentStep: progress.currentStep,
-      stepMessage: progress.stepMessage
+      stepMessage: progress.stepMessage,
+      currentStepIndex: progress.currentStepIndex
     });
 
-    for (let i = 0; i < totalSteps; i++) {
-      let stepText;
-      
-      // Smart step text resolution with better fallbacks
+    // Add completed steps (only those with actual messages from backend)
+    for (let i = 0; i < completedSteps.length; i++) {
       if (completedSteps[i]) {
-        // Use actual completed step from API
-        stepText = completedSteps[i];
-      } else if (i === stepsCompleted && progress.currentStep) {
-        // Current step from API
-        stepText = progress.currentStep;
-      } else if (i === stepsCompleted && progress.stepMessage) {
-        // Alternative current step message
-        stepText = progress.stepMessage;
-      } else {
-        // Smart interpolation based on context
-        const hasServiceNowContext = completedSteps.some((step: string) => 
-          step && step.toLowerCase().includes('servicenow')
-        ) || (progress.currentStep && progress.currentStep.toLowerCase().includes('servicenow'));
-        
-        if (hasServiceNowContext) {
-          stepText = serviceNowSteps[i] || defaultSteps[i] || `Analysis step ${i + 1}`;
-        } else {
-          stepText = defaultSteps[i] || `Analysis step ${i + 1}`;
-        }
-      }
-
-      let status: 'completed' | 'current' | 'pending';
-      let completedAt: string | undefined;
-      
-      if (i < stepsCompleted) {
-        status = 'completed';
         // Get or create a fixed timestamp for this completed step
         if (!completedTimestamps.current.has(i)) {
           completedTimestamps.current.set(i, new Date().toLocaleTimeString([], { 
@@ -113,18 +69,28 @@ const ProgressIndicator: React.FC<ProgressIndicatorProps> = ({ job, className = 
             second: '2-digit' 
           }));
         }
-        completedAt = completedTimestamps.current.get(i);
-      } else if (i === stepsCompleted && isActive) {
-        status = 'current';
-      } else {
-        status = 'pending';
+        
+        steps.push({
+          text: completedSteps[i],
+          status: 'completed',
+          completedAt: completedTimestamps.current.get(i)
+        });
       }
+    }
 
-      steps.push({
-        text: stepText,
-        status,
-        completedAt
-      });
+    // Add current step (only if backend provides a message)
+    if (isActive && (progress.currentStep || progress.stepMessage)) {
+      const currentStepText = progress.currentStep || progress.stepMessage;
+      
+      // Avoid duplicating if current step is already in completed steps
+      const isDuplicate = steps.some(step => step.text === currentStepText);
+      
+      if (!isDuplicate && currentStepText) {
+        steps.push({
+          text: currentStepText,
+          status: 'current',
+        });
+      }
     }
 
     return steps;
@@ -250,12 +216,14 @@ const ProgressIndicator: React.FC<ProgressIndicatorProps> = ({ job, className = 
                 </span>
                 {isActive && (
                   <span className="text-sm text-blue-400 animate-pulse font-medium">
-                    Step {(progress.stepsCompleted || progress.currentStepIndex || 0) + 1} of {progress.totalSteps} • {progress.completionPercentage}% complete
+                    {displayedSteps.some((s: ThinkingStep) => s.status === 'current') 
+                      ? `Step ${displayedSteps.filter((s: ThinkingStep) => s.status === 'completed').length + 1}` 
+                      : 'Analyzing'} • {progress.completionPercentage}% complete
                   </span>
                 )}
                 {isCompleted && (
                   <span className="text-sm text-green-400 font-medium">
-                    Analysis completed in {progress.totalSteps} steps
+                    Analysis completed in {displayedSteps.length} steps
                   </span>
                 )}
               </div>
@@ -362,9 +330,9 @@ const ProgressIndicator: React.FC<ProgressIndicatorProps> = ({ job, className = 
                   onClick={() => setIsExpanded(true)}
                   className="text-gray-400 hover:text-gray-300 transition-colors underline decoration-dotted"
                 >
-                  View {progress.totalSteps} completed steps
+                  View {displayedSteps.length} completed steps
                 </button> :
-                `Starting analysis... ${progress.totalSteps} steps planned`
+                "Starting analysis..."
               }
             </div>
           )}

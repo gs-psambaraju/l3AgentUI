@@ -101,4 +101,17 @@ export const STORAGE_KEYS = {
   CONVERSATION_HISTORY: 'l3-agent-conversation-history',
   USER_PREFERENCES: 'l3-agent-user-preferences',
   LAST_CONVERSATION: 'l3-agent-last-conversation'
-}; 
+};
+
+// Jira Integration Constants
+export const JIRA_CONFIG = {
+  TICKET_REGEX: /\b([A-Z]{2,10})-(\d+)\b/g,
+  MAX_TICKETS_PER_INPUT: 5,
+  TICKET_FETCH_TIMEOUT: 5000,
+} as const;
+
+// Jira ticket patterns for different formats
+export const JIRA_PATTERNS = {
+  STANDARD: /\b([A-Z]{2,10})-(\d+)\b/g,
+  WITH_PREFIX: /(?:ticket|issue|jira)?\s*([A-Z]{2,10})-(\d+)\b/gi,
+} as const; 

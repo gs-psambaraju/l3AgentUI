@@ -319,4 +319,33 @@ export interface HealthData {
     active_conversations: number;
     max_conversations: number;
   };
+}
+
+// Jira Integration Types
+export interface JiraTicket {
+  id: string;
+  key: string;
+  summary: string;
+  description?: string;
+  status: string;
+  priority?: string;
+  assignee?: string;
+  reporter?: string;
+  created: string;
+  updated: string;
+  url?: string;
+}
+
+export interface DetectedTicket {
+  ticketId: string;
+  status: 'detecting' | 'loading' | 'success' | 'error';
+  ticket?: JiraTicket;
+  error?: string;
+}
+
+export interface JiraEnrichmentResult {
+  originalText: string;
+  enrichedText: string;
+  detectedTickets: DetectedTicket[];
+  hasEnrichment: boolean;
 } 
